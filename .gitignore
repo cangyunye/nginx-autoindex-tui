@@ -1,0 +1,29 @@
+# Binary
+nginx-autoindex-tui
+nginx-autoindex-tui.exe
+/tmp/
+
+# macOS
+.DS_Store
+.DS_Store?
+.Spotlight-V100
+.Trashes
+
+# Go
+go/pkg/
+*.test
+*.out
+*.prof
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Design docs (ADRs + implementation plans — not part of source)
+docs/adr/
+docs/superpowers/
+Go_Nginx_File_Index_Browser.zip
+.uploads/
