@@ -75,9 +75,17 @@ func TestParseJSON(t *testing.T) {
 		}
 	}
 
-	// directory by type
+	// directory entries should be marked IsDir
 	if !page.Entries[1].IsDir {
 		t.Errorf("entries[1].IsDir = false, expected true (docs, type=directory)")
+	}
+	// directory href should end with /
+	if page.Entries[1].Href != "docs/" {
+		t.Errorf("entries[1].Href = %q, want %q", page.Entries[1].Href, "docs/")
+	}
+	// ../ also has / suffix
+	if page.Entries[0].Href != "../" {
+		t.Errorf("entries[0].Href = %q, want %q", page.Entries[0].Href, "../")
 	}
 	// file should not be directory
 	if page.Entries[2].IsDir {

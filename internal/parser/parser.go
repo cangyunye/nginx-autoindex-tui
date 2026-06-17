@@ -114,9 +114,13 @@ func ParseJSON(r io.Reader) (*Page, error) {
 	}
 	for _, e := range entries {
 		isDir := e.Type == "directory" || strings.HasSuffix(e.Name, "/")
-		// name 用作 href（保持原始编码），也用作显示名
+		href := e.Name
+		// 目录 href 必须有尾部 /，使后续 url.ResolveReference 行为一致
+		if isDir && !strings.HasSuffix(href, "/") {
+			href += "/"
+		}
 		page.Entries = append(page.Entries, Entry{
-			Href:     e.Name,
+			Href:     href,
 			Name:     e.Name,
 			DateTime: e.Mtime,
 			Size:     e.Size,
