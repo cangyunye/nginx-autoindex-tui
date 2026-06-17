@@ -45,14 +45,11 @@ Four internal packages:
   Display names are URL-decoded; hrefs stay encoded for requests.
 
 - **`internal/tui/`** — Bubble Tea model + styles.
-  - **`model.go`**: Elm-architected `Model` (Init/Update/View). Holds current URL,
-    parsed page, cursor, index-input buffer, history stack, loading/error state,
-    download queue (buffered channel + goroutine pool, concurrency default 3),
-    mark-mode state, overwrite-confirmation flow, directory cache (LRU, 5 entries),
-    download-history panel.
-  - **`styles.go`**: Lip Gloss styles for title, help text, errors, meta info.
-    Supports `dark` / `light` / `mono` themes and `normal` / `rounded` / `ascii`
-    border styles.
+  - **`model.go`**: Elm-architected `Model` (Init/Update/View). Holds current URL, root URL,
+    parsed page, cursor, loading/error state, overwrite-confirmation flow (Y/N/A),
+    force-overwrite toggle (F key), and configurable theme/border/userAgent/outputDir.
+  - **`styles.go`**: 主题系统 via `StylesForTheme(theme)` → `ThemeStyles` struct (dark/light/mono
+    三套配色) + `BorderForStyle(style)` (normal/rounded/ascii 三种边框)。
 
 ## Conventions
 
