@@ -2,7 +2,11 @@ package tui
 
 import (
 	"fmt"
+	"net/url"
+	"os"
 	"os/exec"
+	"path"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -25,19 +29,57 @@ type execMsg struct {
 	err    error
 }
 
-// Model 持有 TUI 的全部状态。
-type Model struct {
-	currentURL string
-	rootURL    string
-	page       *parser.Page
-	cursor     int
-	loading    bool
-	err        string
-	lastOutput string // wget 执行的摘要输出
+// Config 是创建 Model 的配置参数。
+type Config struct {
+	InitialURL     string
+	ForceOverwrite bool
+	OutputDir      string
+	Concurrent     int
+	Insecure       bool
+	UserAgent      string
+	BorderStyle    string
+	Theme          string
 }
 
-func NewModel(initialURL string) *Model {
-	return &Model{currentURL: initialURL, rootURL: initialURL, loading: true}
+// Model 持有 TUI 的全部状态。
+type Model struct {
+	currentURL     string
+	rootURL        string
+	page           *parser.Page
+	cursor         int
+	loading        bool
+	err            string
+	lastOutput     string // wget 执行的摘要输出
+	forceOverwrite bool   // 是否跳过覆盖确认
+	outputDir      string // 下载保存目录
+	confirmPending bool   // 等待用户覆盖确认
+	pendingURL     string // 待确认的文件 URL
+	pendingName    string // 待确认的文件显示名
+	concurrent     int    // 同时下载的 wget 进程最大数
+	insecure       bool   // 跳过 SSL 证书验证
+	userAgent      string // 自定义 User-Agent
+	borderStyle    string // 边框风格
+	theme          string // 颜色方案
+}
+
+func NewModel(cfg Config) *Model {
+	// 确保 rootURL 以 / 结尾，使 url.ResolveReference 行为一致
+	root := cfg.InitialURL
+	if !strings.HasSuffix(root, "/") {
+		root += "/"
+	}
+	return &Model{
+		currentURL:     cfg.InitialURL,
+		rootURL:        root,
+		loading:        true,
+		forceOverwrite: cfg.ForceOverwrite,
+		outputDir:      cfg.OutputDir,
+		concurrent:     cfg.Concurrent,
+		insecure:       cfg.Insecure,
+		userAgent:      cfg.UserAgent,
+		borderStyle:    cfg.BorderStyle,
+		theme:          cfg.Theme,
+	}
 }
 
 // ---- Elm hooks ----
@@ -49,6 +91,23 @@ func (m *Model) Init() tea.Cmd {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// 覆盖确认模式：拦截 Y/N/A
+		if m.confirmPending {
+			switch msg.String() {
+			case "y", "Y":
+				m.confirmPending = false
+				return m, m.execWgetCmd(m.pendingURL)
+			case "n", "N":
+				m.confirmPending = false
+				m.lastOutput = "skipped: " + m.pendingName
+			case "a", "A":
+				m.forceOverwrite = true
+				m.confirmPending = false
+				return m, m.execWgetCmd(m.pendingURL)
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
@@ -62,6 +121,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter", " ":
 			return m, m.openSelected()
+		case "f", "F":
+			m.forceOverwrite = !m.forceOverwrite
+			if m.forceOverwrite {
+				m.lastOutput = "force overwrite ON"
+			} else {
+				m.lastOutput = "force overwrite OFF"
+			}
 		case "r":
 			m.loading = true
 			m.err = ""
@@ -90,22 +156,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) View() string {
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render(m.pageOrFallbackTitle()) + "\n")
-	b.WriteString(metaStyle.Render("URL: "+m.currentURL) + "\n\n")
+	s := StylesForTheme(m.theme)
+	border := BorderForStyle(m.borderStyle)
+
+	b.WriteString(s.Title.Render(m.pageOrFallbackTitle()) + "\n")
+	b.WriteString(s.Meta.Render("URL: "+m.currentURL) + "\n\n")
 
 	if m.loading {
 		b.WriteString("  loading...\n")
-		b.WriteString(helpStyle.Render("(ctrl+c 退出)") + "\n")
+		b.WriteString(s.Help.Render("(ctrl+c 退出)") + "\n")
 		return b.String()
 	}
 	if m.err != "" {
-		b.WriteString(errStyle.Render("ERROR: "+m.err) + "\n")
-		b.WriteString(helpStyle.Render("按 R 重试，ctrl+c 退出") + "\n")
+		b.WriteString(s.Error.Render("ERROR: "+m.err) + "\n")
+		b.WriteString(s.Help.Render("按 R 重试，ctrl+c 退出") + "\n")
 		return b.String()
 	}
 	if m.page == nil || len(m.page.Entries) == 0 {
 		b.WriteString("  (no entries)\n")
-		b.WriteString(helpStyle.Render("R 刷新，ctrl+c 退出") + "\n")
+		b.WriteString(s.Help.Render("R 刷新，ctrl+c 退出") + "\n")
 		return b.String()
 	}
 
@@ -121,20 +190,20 @@ func (m *Model) View() string {
 	}
 
 	t := table.New().
-		Border(lipgloss.NormalBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))).
+		Border(border).
+		BorderStyle(lipgloss.NewStyle().Foreground(s.BorderFg)).
 		Headers("Idx", "Type", "Name", "Date/Time", "Size").
 		Rows(rows...).
 		StyleFunc(func(row, col int) lipgloss.Style {
 			if row == -1 {
-				return lipgloss.NewStyle().Foreground(lipgloss.Color("#FEF3C7")).Bold(true).Padding(0, 1)
+				return s.Header.Padding(0, 1)
 			}
-			base := lipgloss.NewStyle().Padding(0, 1)
+			base := lipgloss.NewStyle().Padding(0, 1).Foreground(s.NormalFg)
 			if row == m.cursor {
-				base = base.Foreground(lipgloss.Color("#FFCC66")).Background(lipgloss.Color("#3C3C3C")).Bold(true)
+				base = base.Foreground(s.CursorFg).Background(s.CursorBg).Bold(true)
 			}
 			if col == 1 && rows[row][1] == "DIR " {
-				base = base.Foreground(lipgloss.Color("#66DDAA"))
+				base = base.Foreground(s.DirFg)
 			}
 			return base
 		})
@@ -143,11 +212,20 @@ func (m *Model) View() string {
 	b.WriteString("\n")
 
 	if m.lastOutput != "" {
-		b.WriteString(metaStyle.Render("--- wget output ---") + "\n")
+		b.WriteString(s.Meta.Render("--- wget output ---") + "\n")
 		b.WriteString(m.lastOutput + "\n")
 	}
 
-	b.WriteString(helpStyle.Render("↑/↓ or j/k 移动 · Enter 进入目录/下载文件 · R 刷新 · q/ctrl+c 退出") + "\n")
+	if m.confirmPending {
+		b.WriteString(s.Error.Render(fmt.Sprintf("%s 已存在。[Y] 覆盖  [N] 跳过  [A] 始终覆盖", m.pendingName)) + "\n")
+	} else {
+		helpText := "↑/↓ or j/k 移动 · Enter 进入目录/下载文件 · R 刷新 · F 强制覆盖"
+		if m.forceOverwrite {
+			helpText += " [FORCE ON]"
+		}
+		helpText += " · q/ctrl+c 退出"
+		b.WriteString(s.Help.Render(helpText) + "\n")
+	}
 	return b.String()
 }
 
@@ -170,12 +248,33 @@ func (m *Model) openSelected() tea.Cmd {
 	if err != nil {
 		return func() tea.Msg { return execMsg{err: err} }
 	}
+	// 根路径约束：不允许脱离 rootURL 范围
+	if !strings.HasPrefix(absURL, m.rootURL) {
+		m.err = fmt.Sprintf("outside root: %s", absURL)
+		return nil
+	}
 	if e.IsDir {
 		m.loading = true
 		m.err = ""
 		return fetchCmd(absURL)
 	}
-	return execWgetCmd(absURL)
+
+	// 文件下载：检查是否已存在（仅在非强制覆盖时）
+	if !m.forceOverwrite {
+		filename := filenameFromURL(absURL)
+		dlPath := filename
+		if m.outputDir != "" {
+			dlPath = filepath.Join(m.outputDir, filename)
+		}
+		if _, err := os.Stat(dlPath); err == nil {
+			// 文件已存在，进入确认模式
+			m.confirmPending = true
+			m.pendingURL = absURL
+			m.pendingName = filename
+			return nil
+		}
+	}
+	return m.execWgetCmd(absURL)
 }
 
 // fetchCmd 发起 HTTP 获取并根据 Content-Type 自动选择解析方式。
@@ -194,14 +293,28 @@ func fetchCmd(url string) tea.Cmd {
 }
 
 // execWgetCmd 打印 wget 命令到 stdout，然后执行 wget 下载覆盖当前文件。
-func execWgetCmd(url string) tea.Cmd {
+func (m *Model) execWgetCmd(url string) tea.Cmd {
 	return func() tea.Msg {
-		cmdText := fmt.Sprintf("wget -N -q %q", url)
-		cmd := exec.Command("wget", "-N", "-q", url)
+		args := []string{"-N", "-q"}
+		if m.outputDir != "" {
+			args = append(args, "-P", m.outputDir)
+		}
+		args = append(args, url)
+		cmdText := "wget " + strings.Join(args, " ")
+		cmd := exec.Command("wget", args...)
 		out, err := cmd.CombinedOutput()
 		return execMsg{
 			output: "$ " + cmdText + "\n" + string(out),
 			err:    err,
 		}
 	}
+}
+
+// filenameFromURL 从下载 URL 中提取文件名。
+func filenameFromURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	return path.Base(u.Path)
 }
