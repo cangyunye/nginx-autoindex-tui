@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"encoding/json"
 	"io"
 	"strings"
 
@@ -92,6 +93,57 @@ func extractTailAfter(s *goquery.Selection) string {
 		}
 	}
 	return sb.String()
+}
+
+// jsonEntry 对应 nginx autoindex JSON 格式的一个元素。
+type jsonEntry struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Mtime string `json:"mtime"`
+	Size  string `json:"size,omitempty"`
+}
+
+// ParseJSON 从 reader 读取 JSON 格式的 autoindex 列表，返回 Page。
+func ParseJSON(r io.Reader) (*Page, error) {
+	var entries []jsonEntry
+	if err := json.NewDecoder(r).Decode(&entries); err != nil {
+		return nil, err
+	}
+	page := &Page{
+		Title: "Index",
+	}
+	for _, e := range entries {
+		isDir := e.Type == "directory" || strings.HasSuffix(e.Name, "/")
+		// name 用作 href（保持原始编码），也用作显示名
+		page.Entries = append(page.Entries, Entry{
+			Href:     e.Name,
+			Name:     e.Name,
+			DateTime: e.Mtime,
+			Size:     e.Size,
+			IsDir:    isDir,
+		})
+	}
+	return page, nil
+}
+
+// ParseAuto 根据 Content-Type 自动选择解析方式，不明确时先试 JSON 再回退 HTML。
+func ParseAuto(r io.Reader, contentType string) (*Page, error) {
+	if strings.Contains(contentType, "application/json") {
+		return ParseJSON(r)
+	}
+	if strings.Contains(contentType, "text/html") {
+		return Parse(r)
+	}
+	// Content-Type 不明确：先试 JSON，失败后回退 HTML
+	page, err := ParseJSON(r)
+	if err == nil {
+		return page, nil
+	}
+	// 重置 reader 重试 HTML 解析
+	if rs, ok := r.(io.Seeker); ok {
+		_, _ = rs.Seek(0, io.SeekStart)
+	}
+	return Parse(r)
 }
 
 // looksLikeTime 粗略判断是否形如 "HH:MM"。

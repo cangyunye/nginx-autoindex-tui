@@ -178,14 +178,14 @@ func (m *Model) openSelected() tea.Cmd {
 	return execWgetCmd(absURL)
 }
 
-// fetchCmd 发起 HTTP 获取并解析页面。
+// fetchCmd 发起 HTTP 获取并根据 Content-Type 自动选择解析方式。
 func fetchCmd(url string) tea.Cmd {
 	return func() tea.Msg {
-		html, err := fetcher.FetchHTML(url)
+		res, err := fetcher.Fetch(url)
 		if err != nil {
 			return fetchMsg{url: url, err: err}
 		}
-		page, err := parser.Parse(strings.NewReader(html))
+		page, err := parser.ParseAuto(strings.NewReader(res.Body), res.ContentType)
 		if err != nil {
 			return fetchMsg{url: url, err: err}
 		}

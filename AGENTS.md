@@ -38,7 +38,9 @@ Four internal packages:
   `url.ResolveReference`. Detects Content-Type to decide HTML vs JSON parsing.
 
 - **`internal/parser/`** — Parses autoindex listings. `Parse(r io.Reader)` handles HTML
-  (goquery → `<h1>` title + `<pre>` / `<a>` entries) and JSON (`name`/`type`/`mtime`/`size`).
+  (goquery → `<h1>` title + `<pre>` / `<a>` entries). `ParseJSON(r io.Reader)` handles
+  JSON (`name`/`type`/`mtime`/`size`). `ParseAuto(r, contentType)` dispatches by
+  Content-Type; falls back to JSON-first, then HTML when CT is unclear.
   Output: `*Page` with `Title` + `[]Entry` (Href, Name, DateTime, Size, IsDir).
   Display names are URL-decoded; hrefs stay encoded for requests.
 

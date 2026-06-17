@@ -1,0 +1,24 @@
+[
+  {
+    "name": "../",
+    "type": "directory",
+    "mtime": "Thu, 01 Jan 2024 10:00:00 GMT"
+  },
+  {
+    "name": "docs",
+    "type": "directory",
+    "mtime": "Fri, 15 Mar 2024 12:30:00 GMT"
+  },
+  {
+    "name": "file1.txt",
+    "type": "file",
+    "mtime": "Thu, 01 Jan 2024 10:00:00 GMT",
+    "size": "1229"
+  },
+  {
+    "name": "image.png",
+    "type": "file",
+    "mtime": "Tue, 02 Jan 2024 11:30:00 GMT",
+    "size": "46080"
+  }
+]
