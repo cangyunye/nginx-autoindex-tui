@@ -112,12 +112,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "up", "k":
+			if m.page == nil || len(m.page.Entries) == 0 {
+				break
+			}
 			if m.cursor > 0 {
 				m.cursor--
+			} else {
+				m.cursor = len(m.page.Entries) - 1 // 到顶后跳到最后
 			}
 		case "down", "j":
-			if m.page != nil && m.cursor < len(m.page.Entries)-1 {
+			if m.page == nil || len(m.page.Entries) == 0 {
+				break
+			}
+			if m.cursor < len(m.page.Entries)-1 {
 				m.cursor++
+			} else {
+				m.cursor = 0 // 到底后跳到开头
+			}
+		case "esc", "backspace", "b":
+			// 返回上级目录：查找 ../ 条目
+			cmd := m.goToParent()
+			if cmd != nil {
+				return m, cmd
 			}
 		case "enter", " ":
 			return m, m.openSelected()
@@ -219,7 +235,7 @@ func (m *Model) View() string {
 	if m.confirmPending {
 		b.WriteString(s.Error.Render(fmt.Sprintf("%s 已存在。[Y] 覆盖  [N] 跳过  [A] 始终覆盖", m.pendingName)) + "\n")
 	} else {
-		helpText := "↑/↓ or j/k 移动 · Enter 进入目录/下载文件 · R 刷新 · F 强制覆盖"
+		helpText := "↑/↓ or j/k 移动（循环） · Enter 进入/下载 · Esc/b 上级 · R 刷新 · F 强制覆盖"
 		if m.forceOverwrite {
 			helpText += " [FORCE ON]"
 		}
@@ -317,4 +333,19 @@ func filenameFromURL(rawURL string) string {
 		return rawURL
 	}
 	return path.Base(u.Path)
+}
+
+// goToParent 查找当前页面的 ../ 条目并导航返回上级目录。
+// 如果没有 ../（已在根目录），返回 nil。
+func (m *Model) goToParent() tea.Cmd {
+	if m.page == nil {
+		return nil
+	}
+	for i, e := range m.page.Entries {
+		if e.Name == "../" && e.Href == "../" {
+			m.cursor = i
+			return m.openSelected()
+		}
+	}
+	return nil
 }
