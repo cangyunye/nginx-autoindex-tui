@@ -103,6 +103,17 @@ func TestParseJSON(t *testing.T) {
 	if page.Entries[2].Href != "file1.txt" {
 		t.Errorf("entries[2].Href = %q, want %q", page.Entries[2].Href, "file1.txt")
 	}
+
+	// file with numeric size should parse without error
+	numericJSON := `[{"name":"f.bin","type":"file","mtime":"...","size":63969}]`
+	r := strings.NewReader(numericJSON)
+	page2, err := parser.ParseJSON(r)
+	if err != nil {
+		t.Fatalf("ParseJSON with numeric size returned error: %v", err)
+	}
+	if len(page2.Entries) != 1 || page2.Entries[0].Size != "63969" {
+		t.Errorf("numeric size: got Size=%q, want %q", page2.Entries[0].Size, "63969")
+	}
 }
 
 func TestParseAuto(t *testing.T) {
@@ -114,6 +125,17 @@ func TestParseAuto(t *testing.T) {
 		}
 		if len(page.Entries) != 1 || page.Entries[0].Name != "f.txt" {
 			t.Errorf("unexpected entries: %+v", page.Entries)
+		}
+	})
+
+	t.Run("json numeric size", func(t *testing.T) {
+		r := strings.NewReader(`[{"name":"f.bin","type":"file","mtime":"...","size":12345}]`)
+		page, err := parser.ParseAuto(r, "application/json")
+		if err != nil {
+			t.Fatalf("ParseAuto(json numeric size) returned error: %v", err)
+		}
+		if page.Entries[0].Size != "12345" {
+			t.Errorf("numeric size: got %q, want %q", page.Entries[0].Size, "12345")
 		}
 	})
 

@@ -2,6 +2,7 @@ package parser
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 
@@ -100,7 +101,7 @@ type jsonEntry struct {
 	Name  string `json:"name"`
 	Type  string `json:"type"`
 	Mtime string `json:"mtime"`
-	Size  string `json:"size,omitempty"`
+	Size  interface{} `json:"size,omitempty"`
 }
 
 // ParseJSON 从 reader 读取 JSON 格式的 autoindex 列表，返回 Page。
@@ -119,11 +120,16 @@ func ParseJSON(r io.Reader) (*Page, error) {
 		if isDir && !strings.HasSuffix(href, "/") {
 			href += "/"
 		}
+		// size 在 JSON 中可能是数字或字符串，统一转字符串
+		size := fmt.Sprintf("%v", e.Size)
+		if size == "<nil>" {
+			size = ""
+		}
 		page.Entries = append(page.Entries, Entry{
 			Href:     href,
 			Name:     e.Name,
 			DateTime: e.Mtime,
-			Size:     e.Size,
+			Size:     size,
 			IsDir:    isDir,
 		})
 	}
