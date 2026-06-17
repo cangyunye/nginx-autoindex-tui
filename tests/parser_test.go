@@ -151,6 +151,23 @@ func TestParseAuto(t *testing.T) {
 		}
 	})
 
+	t.Run("json directory href has trailing slash for multi-level nav", func(t *testing.T) {
+		// JSON 目录条目 href 必须有尾部 /，否则多级导航会失败
+		input := `[
+			{"name":"subdir","type":"directory","mtime":"..."},
+			{"name":"subdir2","type":"directory","mtime":"..."}
+		]`
+		page, err := parser.ParseJSON(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("ParseJSON returned error: %v", err)
+		}
+		for i, e := range page.Entries {
+			if e.IsDir && !strings.HasSuffix(e.Href, "/") {
+				t.Errorf("entries[%d] IsDir=true but Href=%q missing trailing /", i, e.Href)
+			}
+		}
+	})
+
 	t.Run("unclear falls back to json then html", func(t *testing.T) {
 		// valid JSON should succeed
 		r := strings.NewReader(`[{"name":"a.json","type":"file","mtime":"..."}]`)
