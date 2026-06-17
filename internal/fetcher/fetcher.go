@@ -1,6 +1,7 @@
 package fetcher
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,7 +10,31 @@ import (
 	"time"
 )
 
-var client = &http.Client{Timeout: 30 * time.Second}
+var (
+	client    = &http.Client{Timeout: 30 * time.Second}
+	userAgent string
+)
+
+// SetInsecure 设置是否跳过 HTTPS 的 SSL 证书验证。
+func SetInsecure(skip bool) {
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: skip},
+		}
+		client.Transport = transport
+		return
+	}
+	if transport.TLSClientConfig == nil {
+		transport.TLSClientConfig = &tls.Config{}
+	}
+	transport.TLSClientConfig.InsecureSkipVerify = skip
+}
+
+// SetUserAgent 设置 HTTP 请求的 User-Agent 头（空字符串使用 Go 默认值）。
+func SetUserAgent(ua string) {
+	userAgent = ua
+}
 
 // FetchResult 包含 HTTP 响应体与 Content-Type。
 type FetchResult struct {
@@ -27,7 +52,14 @@ func Fetch(rawURL string) (*FetchResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid url %q: %w", rawURL, err)
 	}
-	resp, err := client.Get(u.String())
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("new request: %w", err)
+	}
+	if userAgent != "" {
+		req.Header.Set("User-Agent", userAgent)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("get %s: %w", u.String(), err)
 	}
