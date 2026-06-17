@@ -69,7 +69,7 @@ func NewModel(cfg Config) *Model {
 		root += "/"
 	}
 	return &Model{
-		currentURL:     cfg.InitialURL,
+		currentURL:     root,  // 和 rootURL 使用同样的归一化值
 		rootURL:        root,
 		loading:        true,
 		forceOverwrite: cfg.ForceOverwrite,
