@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 
 	"nginx-autoindex-tui/internal/fetcher"
+	"nginx-autoindex-tui/internal/i18n"
 	"nginx-autoindex-tui/internal/parser"
 )
 
@@ -39,6 +40,7 @@ type Config struct {
 	UserAgent      string
 	BorderStyle    string
 	Theme          string
+	Locale         i18n.Locale
 }
 
 // Model 持有 TUI 的全部状态。
@@ -60,6 +62,7 @@ type Model struct {
 	userAgent      string // 自定义 User-Agent
 	borderStyle    string // 边框风格
 	theme          string // 颜色方案
+	locale         i18n.Locale
 }
 
 func NewModel(cfg Config) *Model {
@@ -79,6 +82,7 @@ func NewModel(cfg Config) *Model {
 		userAgent:      cfg.UserAgent,
 		borderStyle:    cfg.BorderStyle,
 		theme:          cfg.Theme,
+		locale:         cfg.Locale,
 	}
 }
 
@@ -99,7 +103,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.execWgetCmd(m.pendingURL)
 			case "n", "N":
 				m.confirmPending = false
-				m.lastOutput = "skipped: " + m.pendingName
+				skipStr := i18n.GetStrings(m.locale.Lang)
+				m.lastOutput = fmt.Sprintf(skipStr.OutputSkipped, m.pendingName)
 			case "a", "A":
 				m.forceOverwrite = true
 				m.confirmPending = false
@@ -139,10 +144,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.openSelected()
 		case "f", "F":
 			m.forceOverwrite = !m.forceOverwrite
+			str := i18n.GetStrings(m.locale.Lang)
 			if m.forceOverwrite {
-				m.lastOutput = "force overwrite ON"
+				m.lastOutput = str.ForceOverwriteON
 			} else {
-				m.lastOutput = "force overwrite OFF"
+				m.lastOutput = str.ForceOverwriteOFF
 			}
 		case "r":
 			m.loading = true
@@ -161,7 +167,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastOutput = ""
 	case execMsg:
 		if msg.err != nil {
-			m.lastOutput = "exec failed: " + msg.err.Error()
+			m.lastOutput = i18n.GetStrings(m.locale.Lang).ExecFailedPrefix + msg.err.Error()
 		} else {
 			m.lastOutput = msg.output
 		}
@@ -174,23 +180,24 @@ func (m *Model) View() string {
 
 	s := StylesForTheme(m.theme)
 	border := BorderForStyle(m.borderStyle)
+	str := i18n.GetStrings(m.locale.Lang)
 
 	b.WriteString(s.Title.Render(m.pageOrFallbackTitle()) + "\n")
-	b.WriteString(s.Meta.Render("URL: "+m.currentURL) + "\n\n")
+	b.WriteString(s.Meta.Render(str.URLPrefix+m.currentURL) + "\n\n")
 
 	if m.loading {
-		b.WriteString("  loading...\n")
-		b.WriteString(s.Help.Render("(ctrl+c 退出)") + "\n")
+		b.WriteString(s.Meta.Render(str.Loading) + "\n")
+		b.WriteString(s.Help.Render(str.LoadingQuitMsg) + "\n")
 		return b.String()
 	}
 	if m.err != "" {
-		b.WriteString(s.Error.Render("ERROR: "+m.err) + "\n")
-		b.WriteString(s.Help.Render("按 R 重试，ctrl+c 退出") + "\n")
+		b.WriteString(s.Error.Render(str.ErrorPrefix+m.err) + "\n")
+		b.WriteString(s.Help.Render(str.ErrorRetryHelp) + "\n")
 		return b.String()
 	}
 	if m.page == nil || len(m.page.Entries) == 0 {
-		b.WriteString("  (no entries)\n")
-		b.WriteString(s.Help.Render("R 刷新，ctrl+c 退出") + "\n")
+		b.WriteString(s.Meta.Render(str.NoEntries) + "\n")
+		b.WriteString(s.Help.Render(str.RefreshMsg) + "\n")
 		return b.String()
 	}
 
@@ -198,9 +205,9 @@ func (m *Model) View() string {
 	rows := make([][]string, 0, len(m.page.Entries))
 	for i, e := range m.page.Entries {
 		idx := fmt.Sprintf("%d", i+1)
-		kind := "FILE"
+		kind := str.RowFile
 		if e.IsDir {
-			kind = "DIR "
+			kind = str.RowDir
 		}
 		rows = append(rows, []string{idx, kind, e.Name, e.DateTime, e.Size})
 	}
@@ -208,7 +215,7 @@ func (m *Model) View() string {
 	t := table.New().
 		Border(border).
 		BorderStyle(lipgloss.NewStyle().Foreground(s.BorderFg)).
-		Headers("Idx", "Type", "Name", "Date/Time", "Size").
+		Headers(str.ColIdx, str.ColType, str.ColName, str.ColDateTime, str.ColSize).
 		Rows(rows...).
 		StyleFunc(func(row, col int) lipgloss.Style {
 			if row == -1 {
@@ -218,7 +225,7 @@ func (m *Model) View() string {
 			if row == m.cursor {
 				base = base.Foreground(s.CursorFg).Background(s.CursorBg).Bold(true)
 			}
-			if col == 1 && rows[row][1] == "DIR " {
+			if col == 1 && rows[row][1] == str.RowDir {
 				base = base.Foreground(s.DirFg)
 			}
 			return base
@@ -228,18 +235,18 @@ func (m *Model) View() string {
 	b.WriteString("\n")
 
 	if m.lastOutput != "" {
-		b.WriteString(s.Meta.Render("--- wget output ---") + "\n")
+		b.WriteString(s.Meta.Render(str.WgetHeader) + "\n")
 		b.WriteString(m.lastOutput + "\n")
 	}
 
 	if m.confirmPending {
-		b.WriteString(s.Error.Render(fmt.Sprintf("%s 已存在。[Y] 覆盖  [N] 跳过  [A] 始终覆盖", m.pendingName)) + "\n")
+		b.WriteString(s.Error.Render(fmt.Sprintf(str.OverwriteConfirm, m.pendingName)) + "\n")
 	} else {
-		helpText := "↑/↓ or j/k 移动（循环） · Enter 进入/下载 · Esc/b 上级 · R 刷新 · F 强制覆盖"
+		helpText := str.HelpText
 		if m.forceOverwrite {
-			helpText += " [FORCE ON]"
+			helpText += str.ForceON
 		}
-		helpText += " · q/ctrl+c 退出"
+		helpText += str.QuitSuffix
 		b.WriteString(s.Help.Render(helpText) + "\n")
 	}
 	return b.String()
@@ -251,7 +258,7 @@ func (m *Model) pageOrFallbackTitle() string {
 	if m.page != nil && m.page.Title != "" {
 		return m.page.Title
 	}
-	return "Nginx Autoindex Browser"
+	return i18n.GetStrings(m.locale.Lang).TitleDefault
 }
 
 // openSelected 决定当前选中条目是目录进入还是文件下载，并返回对应 Cmd。
@@ -266,7 +273,7 @@ func (m *Model) openSelected() tea.Cmd {
 	}
 	// 根路径约束：不允许脱离 rootURL 范围
 	if !strings.HasPrefix(absURL, m.rootURL) {
-		m.err = fmt.Sprintf("outside root: %s", absURL)
+		m.err = fmt.Sprintf(i18n.GetStrings(m.locale.Lang).OutsideRootURL, absURL)
 		return nil
 	}
 	if e.IsDir {

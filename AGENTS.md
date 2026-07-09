@@ -44,7 +44,12 @@ Four internal packages:
   Output: `*Page` with `Title` + `[]Entry` (Href, Name, DateTime, Size, IsDir).
   Display names are URL-decoded; hrefs stay encoded for requests.
 
-- **`internal/tui/`** — Bubble Tea model + styles.
+- **`internal/i18n/`** — 国际化包
+  `DetectLocale()` 按 LC_ALL → LC_CTYPE → LANG 检测语言环境。
+  `GetStrings(lang)` 返回 `Strings` 结构体，包含 en（默认）/zh 两套 UI 文字。
+  `WrapOutput(w, locale)` 在 GBK 环境下将 writer 包装为 UTF-8→GBK 编码器。
+  检测规则：`.gbk/.gb2312/.gb18030/.cp936/.euccn` 后缀 → `{IsGBK:true, Lang:"zh"}`，
+  `zh_` 前缀 → `{Lang:"zh"}`，其余默认 `{Lang:"en"}`。
   - **`model.go`**: Elm-architected `Model` (Init/Update/View). Holds current URL, root URL,
     parsed page, cursor, loading/error state, overwrite-confirmation flow (Y/N/A),
     force-overwrite toggle (F key), and configurable theme/border/userAgent/outputDir.

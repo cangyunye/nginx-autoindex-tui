@@ -27,3 +27,7 @@ docs/adr/
 docs/superpowers/
 Go_Nginx_File_Index_Browser.zip
 .uploads/
+
+# Code intelligence index (auto-generated)
+.codegraph/
+reasonix.toml

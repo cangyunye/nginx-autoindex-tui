@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"nginx-autoindex-tui/internal/fetcher"
+	"nginx-autoindex-tui/internal/i18n"
 	"nginx-autoindex-tui/internal/tui"
 )
 
@@ -23,9 +24,12 @@ var (
 )
 
 func main() {
+	locale := i18n.DetectLocale()
+
 	rootCmd := &cobra.Command{
 		Use:   "nginx-autoindex-tui [URL]",
-		Short: "nignx autoindex 终端文件浏览器",
+		Short: "nginx autoindex terminal file browser",
+		Long:  `An interactive terminal file browser and downloader for nginx autoindex servers.` + "\n\n" + `Supports HTML and JSON autoindex listings, batch download via wget, and directory navigation.`,
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			var initialURL string
@@ -37,6 +41,17 @@ func main() {
 				os.Exit(1)
 			}
 
+			// 自动检测终端 locale：若为 GBK 编码环境且用户未显式指定边框风格，回退为 ascii
+			// 确保 Unicode 制表符不会在 GBK 终端上显示为乱码。
+			if !cmd.Flags().Changed("border-style") && locale.IsGBK {
+				borderStyle = "ascii"
+				msg := "GBK terminal detected, auto-switching to --border-style ascii"
+				if locale.Lang == "zh" {
+					msg = "检测到 GBK 终端编码，自动使用 --border-style ascii"
+				}
+				fmt.Fprintln(os.Stderr, msg)
+			}
+
 			m := tui.NewModel(tui.Config{
 				InitialURL:     initialURL,
 				ForceOverwrite: forceOverwrite,
@@ -46,6 +61,7 @@ func main() {
 				UserAgent:      userAgent,
 				BorderStyle:    borderStyle,
 				Theme:          theme,
+				Locale:         locale,
 			})
 
 			if insecure {
@@ -55,7 +71,8 @@ func main() {
 				fetcher.SetUserAgent(userAgent)
 			}
 
-			p := tea.NewProgram(m)
+			output := i18n.WrapOutput(os.Stdout, locale)
+			p := tea.NewProgram(m, tea.WithOutput(output))
 			if _, err := p.Run(); err != nil {
 				fmt.Fprintln(os.Stderr, "bubble tea error:", err)
 				os.Exit(1)
@@ -63,13 +80,13 @@ func main() {
 		},
 	}
 
-	rootCmd.Flags().BoolVarP(&forceOverwrite, "force", "f", false, "强制覆盖已存在文件，跳过确认")
-	rootCmd.Flags().IntVarP(&concurrent, "concurrent", "c", 3, "同时下载的 wget 进程最大数")
-	rootCmd.Flags().StringVarP(&outputDir, "output-dir", "o", "", "下载文件保存目录（默认当前目录）")
-	rootCmd.Flags().BoolVarP(&insecure, "insecure", "k", false, "跳过 HTTPS 的 SSL 证书验证")
-	rootCmd.Flags().StringVarP(&userAgent, "user-agent", "u", "", "HTTP 请求的 User-Agent 头（默认 Go-http-client）")
-	rootCmd.Flags().StringVar(&borderStyle, "border-style", "normal", "表格边框风格：normal / rounded / ascii")
-	rootCmd.Flags().StringVarP(&theme, "theme", "t", "dark", "颜色方案：dark / light / mono")
+	rootCmd.Flags().BoolVarP(&forceOverwrite, "force", "f", false, "force overwrite existing files, skip confirmation")
+	rootCmd.Flags().IntVarP(&concurrent, "concurrent", "c", 3, "max concurrent wget download processes")
+	rootCmd.Flags().StringVarP(&outputDir, "output-dir", "o", "", "download directory (default current dir)")
+	rootCmd.Flags().BoolVarP(&insecure, "insecure", "k", false, "skip HTTPS SSL certificate verification")
+	rootCmd.Flags().StringVarP(&userAgent, "user-agent", "u", "", "HTTP User-Agent header (default Go-http-client)")
+	rootCmd.Flags().StringVar(&borderStyle, "border-style", "normal", "table border style: normal / rounded / ascii")
+	rootCmd.Flags().StringVarP(&theme, "theme", "t", "dark", "color scheme: dark / light / mono")
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
